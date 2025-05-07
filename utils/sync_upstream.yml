@@ -1,0 +1,53 @@
+name: Sync Upstream Repository
+
+on:
+  push:
+    branches:
+      - main
+  # schedule:
+  #   # UTC 기준 금요일 20:00 → KST 토요일 05:00
+  #   - cron: '0 20 * * 5'
+  workflow_dispatch:
+
+env:
+  UPSTREAM_REPO_OWNER: ${{ vars.UPSTREAM_REPO_OWNER != '' && vars.UPSTREAM_REPO_OWNER || github.repository_owner }}
+  UPSTREAM_REPO_NAME: ${{ vars.UPSTREAM_REPO_NAME }}
+
+permissions:
+  contents:      write
+  pull-requests: write
+
+jobs:
+  sync_upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git user
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync with upstream
+        run: |
+          git remote add upstream "https://github.com/${{ env.UPSTREAM_REPO_OWNER }}/${{ env.UPSTREAM_REPO_NAME }}.git"
+          git fetch upstream main:sync-upstream
+          git push origin sync-upstream --force
+
+      - name: Create Pull Request using actions/github-script
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: 'sync-upstream',
+              base: 'main',
+              title: '🔄 Sync with upstream',
+              body: 'This PR merges upstream/main into our main.'
+            });
+            core.info(`Created PR #${pr.data.number} (mergeable_state=${pr.data.mergeable_state})`);
